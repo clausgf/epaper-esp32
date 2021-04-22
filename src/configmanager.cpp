@@ -1,0 +1,228 @@
+/**
+ * Configuration Manager for ESP32
+ * Copyright (c) 2021 clausgf@github. See LICENSE.md for legal information.
+ */
+
+#include "nvs.h"
+#include "nvs_flash.h"
+
+#include "configmanager.h"
+
+
+//#define USE_NVS
+
+
+// ***************************************************************************
+
+ConfigurationManager::ConfigurationManager(const char *section, const char *defaultJsonStr, const int capacity, const Logger& parentLogger):
+    _section(section),
+    _defaultJsonStr(defaultJsonStr),
+    _capacity(capacity),
+    _logger(__FILE__, parentLogger),
+    _version(""),
+    _jsonDoc(3*capacity)
+{
+}
+
+ConfigurationManager::~ConfigurationManager()
+{
+}
+
+void ConfigurationManager::initNvs()
+{
+#ifdef USE_NVS
+    esp_err_t err = nvs_flash_init();
+    if (err)
+    {
+        _logger.error("nvs_flash_init  error %d",err);
+    }
+
+    if (!_loadConfig())
+    {
+        resetConfig();
+    }
+#else
+    resetConfig();
+#endif
+}
+
+// ***************************************************************************
+
+std::string ConfigurationManager::getJsonStr() const
+{
+    char data[_capacity];
+    serializeJson(_jsonDoc, data, sizeof(data));
+    return std::string(data);
+}
+
+bool ConfigurationManager::setConfig(std::string version, std::string jsonStr)
+{
+    DeserializationError err = deserializeJson(_jsonDoc, jsonStr);
+    if (err)
+    {
+        _logger.error("Configuration data invalid: %s", err.c_str());
+        return false;
+    }
+    _version = version;
+#ifdef USE_NVS
+    return _saveConfig();
+#else
+    return true;
+#endif
+}
+
+bool ConfigurationManager::resetConfig()
+{
+    return setConfig("default", _defaultJsonStr);
+}
+
+
+// ***************************************************************************
+
+std::string ConfigurationManager::getVersion() const
+{
+    return _version;
+}
+
+
+int ConfigurationManager::getInt(std::string key) const
+{
+    int value = 0;
+    if (_jsonDoc.containsKey(key))
+    {
+        value = _jsonDoc[key];
+    } else {
+        _logger.error("getInt(%s) invalid key", key.c_str());
+    }
+    return value;
+}
+
+std::string ConfigurationManager::getString(std::string key) const
+{
+    std::string value;
+    if (_jsonDoc.containsKey(key))
+    {
+        value = _jsonDoc[key].as<std::string>();
+    } else {
+        _logger.error("getInt(%s) invalid key", key.c_str());
+    }
+    return value;
+}
+
+// ***************************************************************************
+
+void ConfigurationManager::log() const
+{
+    _logger.info("Configuration section=%s version=%s", _section, _version.c_str());
+    auto obj = _jsonDoc.as<JsonObject>();
+    for (auto p : obj)
+    {
+        _logger.info("  %s: %s", p.key().c_str(), p.value().as<char *>());
+    }
+    _logger.info("Configuration end");
+}
+
+
+// ***************************************************************************
+
+bool ConfigurationManager::_loadConfig()
+{
+#ifdef USE_NVS
+    _logger.info("Loading configuration from NVRAM with keys %s %s", _VERSION_KEY, _DATA_KEY);
+
+    // open configuration data in nvs
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(_section, NVS_READONLY, &handle);
+    if (err)
+    {
+        _logger.error("nvs_open error %d",err);
+        return false;
+    }
+
+    // load version from nvram into buffer
+    char version[40];
+    size_t version_len = sizeof(version);
+    err = nvs_get_str(handle, _VERSION_KEY, version, &version_len);
+    if (err)
+    {
+        _logger.error("nvs_get_str(%s) error %d", _VERSION_KEY, err);
+        return false;
+    }
+
+    // load data from nvram into buffer
+    char data[_capacity];
+    size_t data_len = _capacity;
+    err = nvs_get_blob(handle, _DATA_KEY, data, &data_len);
+    if (err)
+    {
+        _logger.error("nvs_get_blob(%s, %d) error %d", _DATA_KEY, data_len, err);
+        return false;
+    }
+    _logger.info("read blob, size=%d", data_len);
+
+    // close nvs
+    nvs_close(handle);
+
+    // store configuration data in RAM
+    _version = version;
+    DeserializationError json_err = deserializeJson(_jsonDoc, data);
+    if (json_err)
+    {
+        _logger.error("Loaded configuration data invalid: %s", json_err.c_str());
+        return false;
+    }
+
+    _logger.info("Success loading configuration from NVRAM");
+#endif
+    return true;
+}
+
+// ***************************************************************************
+
+bool ConfigurationManager::_saveConfig()
+{
+#ifdef USE_NVS
+    _logger.info("Storing configuration from NVRAM with keys %s %s", _VERSION_KEY, _DATA_KEY);
+
+    // open configuration data in nvs
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(_section, NVS_READWRITE, &handle);
+    if (err)
+    {
+        _logger.error("nvs_open error %d",err);
+        return false;
+    }
+
+    // Prepare the data and write to nvm
+    err = nvs_set_str(handle, _VERSION_KEY, _version.c_str());
+    if (err)
+    {
+        _logger.error("nvs_set_str(%s) error %d", _VERSION_KEY, err);
+        return false;
+    }
+
+    char data[_capacity];
+    size_t data_len = serializeJson(_jsonDoc, data, sizeof(data));
+    err = nvs_set_blob(handle, _DATA_KEY, data, data_len);
+    if (err)
+    {
+        _logger.error("nvs_set_blob(%s, %d) error %d", _DATA_KEY, data_len, err);
+        return false;
+    }
+    _logger.info("wrote %d bytes", data_len);
+
+    // close nvs
+    err = nvs_commit(handle);
+    if (err)
+    {
+        _logger.error("nvs_commit error %d", _DATA_KEY, err);
+        return false;
+    }
+    nvs_close(handle);
+
+    _logger.info("Success writing configuration to NVRAM");
+#endif
+    return true;
+}
+
+// ***************************************************************************
