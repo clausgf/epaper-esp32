@@ -75,7 +75,10 @@ static void* lodepng_malloc(size_t size) {
 #ifdef LODEPNG_MAX_ALLOC
   if(size > LODEPNG_MAX_ALLOC) return 0;
 #endif
-  return malloc(size);
+  //return malloc(size);
+  void *p = malloc(size);
+  printf("lodepng_malloc(%6u) = 0x%x\n", size, (unsigned)p);
+  return p;
 }
 
 /* NOTE: when realloc returns NULL, it leaves the original memory untouched */
@@ -4754,6 +4757,8 @@ static void decodeGeneric(unsigned char** out, unsigned* w, unsigned* h,
 
   /*loop through the chunks, ignoring unknown chunks and stopping at IEND chunk.
   IDAT data is put at the start of the in buffer*/
+  printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
+
   while(!IEND && !state->error) {
     unsigned chunkLength;
     const unsigned char* data; /*the data in the chunk*/
@@ -4874,6 +4879,7 @@ static void decodeGeneric(unsigned char** out, unsigned* w, unsigned* h,
   if(state->info_png.color.colortype == LCT_PALETTE && !state->info_png.color.palette) {
     state->error = 106; /* error: PNG file must have PLTE chunk if color type is palette */
   }
+  printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
 
   if(!state->error) {
     /*predict output size, to allocate exact size for output buffer to avoid more dynamic allocation.
@@ -4881,6 +4887,7 @@ static void decodeGeneric(unsigned char** out, unsigned* w, unsigned* h,
     if(state->info_png.interlace_method == 0) {
       size_t bpp = lodepng_get_bpp(&state->info_png.color);
       expected_size = lodepng_get_raw_size_idat(*w, *h, bpp);
+      printf("decodeGeneric:%d state=%d bpp=%d expected_size=%d\n", __LINE__, state->error, bpp, expected_size);
     } else {
       size_t bpp = lodepng_get_bpp(&state->info_png.color);
       /*Adam-7 interlaced: expected size is the sum of the 7 sub-images sizes*/
@@ -4894,16 +4901,20 @@ static void decodeGeneric(unsigned char** out, unsigned* w, unsigned* h,
       expected_size += lodepng_get_raw_size_idat((*w + 0), (*h + 0) >> 1, bpp);
     }
 
+    printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
     state->error = zlib_decompress(&scanlines, &scanlines_size, expected_size, idat, idatsize, &state->decoder.zlibsettings);
+    printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
   }
   if(!state->error && scanlines_size != expected_size) state->error = 91; /*decompressed size doesn't match prediction*/
   lodepng_free(idat);
+  printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
 
   if(!state->error) {
     outsize = lodepng_get_raw_size(*w, *h, &state->info_png.color);
     *out = (unsigned char*)lodepng_malloc(outsize);
     if(!*out) state->error = 83; /*alloc fail*/
   }
+  printf("decodeGeneric:%d state=%d\n", __LINE__, state->error);
   if(!state->error) {
     lodepng_memset(*out, 0, outsize);
     state->error = postProcessScanlines(*out, scanlines, *w, *h, &state->info_png);

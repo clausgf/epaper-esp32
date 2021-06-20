@@ -6,8 +6,13 @@
 #pragma once
 
 #include <string>
+
 #include <ArduinoJson.h>
 #include <logger.h>
+
+
+//#define USE_NVS // NVS usage is incomplete and untested!
+
 
 // ***************************************************************************
 
@@ -17,19 +22,18 @@
 class ConfigurationManager
 {
 public:
-    ConfigurationManager(const char *section = "config", const char *defaultJsonStr = "", 
+    ConfigurationManager(const char *defaultJsonStr = "", 
         const int capacity = 2048,
         const Logger& parentLogger = rootLogger);
     virtual ~ConfigurationManager();
-    void initNvs();
 
     std::string getJsonStr() const;
     bool setConfig(std::string version, std::string json);
     bool resetConfig();
     std::string getVersion() const;
 
-    int getInt(std::string key) const;
-    std::string getString(std::string key) const;
+    int getInt(std::string key, int defaultValue = 0) const;
+    std::string getString(std::string key, const std::string defaultValue = "") const;
 
     void log() const;
 
@@ -37,11 +41,10 @@ private:
     bool _loadConfig();
     bool _saveConfig();
 
-    const char *_VERSION_KEY = "version";
-    const char *_DATA_KEY = "data";
+    static constexpr char *_NVS_VERSION_KEY = "version";
+    static constexpr const char *_NVS_DATA_KEY = "data";
+    static constexpr char *_NVS_SECTION = "config";
 
-    const char *_section;
-    const char *_defaultJsonStr;
     const int _capacity;
     Logger _logger;
 

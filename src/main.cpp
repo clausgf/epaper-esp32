@@ -6,12 +6,13 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_log.h>
+#include <tuple>
 
-#include <asyncHTTPrequest.h>
+#include <esp32HTTPrequest.h>
 #include <ArduinoJson.h>
 #include <logger.h>
 #include <battery_monitor.h>
-#include <configmanager.h>
+#include <configuration_manager.h>
 
 #include "led.h"
 #include "wifi_network.h"
@@ -36,6 +37,8 @@ auto battery = BatteryMonitor(
     /*voltageFactor_perMille*/ 2000,
     /*int voltageBias_mV*/ 0 );
 
+ConfigurationManager configuration = ConfigurationManager();
+
 auto net = WifiNetwork( WIFI_SSID, WIFI_PASSWORD );
 
 
@@ -44,7 +47,9 @@ auto epd = EPD(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
 
 
 // ***** Data stored in RTC memory is preserved during deep sleep ************
-const int MAX_RTC_HTTP_ETAG_SIZE = 127;
+constexpr int MAX_RTC_CONFIG_SIZE = 1024;
+RTC_DATA_ATTR char rtc_config[MAX_RTC_CONFIG_SIZE] = {0};
+constexpr int MAX_RTC_HTTP_ETAG_SIZE = 127;
 RTC_DATA_ATTR char rtc_http_etag[MAX_RTC_HTTP_ETAG_SIZE] = {0};
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR unsigned long activeDuration_ms = 0;
@@ -297,20 +302,20 @@ void setup()
         //statusRequest.setDebug(true);
         if ( statusRequest.open("POST", statusUrl.c_str()) )
         {
-            rootLogger.info("body: %s", statusBody.c_str());
+            rootLogger.debug("StatusRequest body: %s", statusBody.c_str());
             statusRequest.send((const uint8_t*)statusBody.c_str(), statusBody.length());
         } else {
             rootLogger.error("HttpClient cannot open connection! POST %s", statusUrl.c_str());
         }
 
         // get new image
-        auto httpImageClient = HttpClient(/*debug*/ true);
+        auto httpImageClient = HttpClient(/*debug*/ false);
         httpImageClient.startRequest("GET", base_url + "api/displays/" + net.getId() + "/image", "", etag.get());
 
         // Wait for image data...
         httpImageClient.waitForCompletionUntil(bootTimestamp + 5000);
         updateInterval_s = httpImageClient.getResponseMaxAgeSeconds(updateInterval_s);
-        httpImageClient.log();
+        //httpImageClient.log();
 
         // Display the image
         if ( httpImageClient.isResponseLengthOk() && httpImageClient.getResponseCode() == 200 )
@@ -321,26 +326,43 @@ void setup()
                 net.disconnect(); // stop networking now to save power
             }
 
+            // create pixel buffers from png and display them
             String png = httpImageClient.getResponseText();
             auto pb = PixelBuffer(epd.getPanelPtr()->WIDTH, epd.getPanelPtr()->HEIGHT, 1);
-            if (pb.createBufFromPng((unsigned char*)httpImageClient.getResponseText().c_str(), png.length()))
+
+            if (pb.prepareBufFromPng((unsigned char*)httpImageClient.getResponseText().c_str(), png.length()))
             {
-                pb.drawBattery(epd.getPanelPtr()->WIDTH - 22 - 5, 5, battery.getVoltage_mV(), battery.getPercentage());
-                pb.drawWiFi(epd.getPanelPtr()->WIDTH - 22 - 5 - 14 - 5, 5, net.getRSSI());
-                epd.displayPixelBuffer(pb.getBufPtr());
+                auto channelColors = epd.getChannelColors();
+                for (int channelNo = 0; channelNo < channelColors.size(); channelNo++)
+                {
+                    auto colorTuple = channelColors[channelNo];
+                    //rootLogger.info("colorTuple=%d/%d/%d", std::get<0>(colorTuple), std::get<1>(colorTuple), std::get<2>(colorTuple));
+                    pb.writePngChannelToBuffer( colorTuple );
+                    delay(1); // satisfy the task watchdog
+                    if ( std::get<0>(colorTuple)==255 && std::get<1>(colorTuple)==255 && std::get<2>(colorTuple)==255 )
+                    {
+                        pb.drawBattery(epd.getPanelPtr()->WIDTH - 22 - 5, 5, battery.getVoltage_mV(), battery.getPercentage());
+                        pb.drawWiFi(epd.getPanelPtr()->WIDTH - 22 - 5 - 14 - 5, 5, net.getRSSI());
+                    }
+                    epd.writeChannelToDisplay(channelNo, pb.getBufPtr());
+                    delay(1); // satisfy the task watchdog
+                }
                 etag.set(httpImageClient.getResponseHeader("ETag"));
+                epd.display();
+            } else {
+                rootLogger.error("Error creating Pixel Buffer");
             }
         } else {
             rootLogger.debug("HTTP Response code %d != 200, nothing to display!", httpImageClient.getResponseCode());
         }
         // TODO httpStatusReporter.waitForCompletionUntil(bootTimestamp + 5000);
+        epd.stop();
     } else {
         // no network connection
     }
 
     // shutdown
     net.disconnect();
-    epd.stop();
     sleepDuration_ms = bootTimestamp + updateInterval_s * 1000l - millis();
     if (sleepDuration_ms < min_update_interval_s*1000l)
     {

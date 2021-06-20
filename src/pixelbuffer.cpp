@@ -20,7 +20,10 @@ PixelBuffer::PixelBuffer(int width, int height, int bitPerPixel, const Logger& p
     _bitPerPixel(bitPerPixel),
     _logger("pixelbuffer", parentLogger)
 {
+    _pngImagePtr = nullptr;
+    _pngImageSize = 0;
     _bufPtr = nullptr;
+    _bufSize = 0;
 }
 
 PixelBuffer::~PixelBuffer()
@@ -31,15 +34,94 @@ PixelBuffer::~PixelBuffer()
 
 // ***** Buffer Management ***************************************************
 
-bool PixelBuffer::createBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize)
+#include "pngle.h"
+static PixelBuffer* pixelBufferPtr;
+uint8_t selected_r;
+uint8_t selected_g;
+uint8_t selected_b;
+
+uint32_t pixels_set;
+uint32_t pixels_unset;
+
+
+void on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint8_t rgba[4])
+{
+    uint8_t r = rgba[0]; // 0 - 255
+    uint8_t g = rgba[1]; // 0 - 255
+    uint8_t b = rgba[2]; // 0 - 255
+    //uint8_t a = rgba[3]; // 0: fully transparent, 255: fully opaque
+
+    if (r == selected_r && g == selected_g && b == selected_b)
+    {
+        pixelBufferPtr->drawPixel(x, y, 1);
+        pixels_set++;
+    } else {
+        pixelBufferPtr->drawPixel(x, y, 0);
+        pixels_unset++;
+    }
+}
+
+bool PixelBuffer::writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> colors)
+{
+    // check invariants
+    if (_pngImagePtr == nullptr) {
+        _logger.error("_pngImagePtr not set.");
+        return false;
+    }
+
+    // configure on_draw
+    selected_r = std::get<0>(colors);
+    selected_g = std::get<1>(colors);
+    selected_b = std::get<2>(colors);
+    _logger.info("Decode PNG channel r=%d g=%d b=%d", selected_r, selected_g, selected_b);
+
+    // create a white background
+    memset(_bufPtr, 0, _bufSize);
+    pixels_set = 0;
+    pixels_unset = 0;
+
+    // setup pngle to draw the channel
+    pngle_t *pngle = pngle_new();
+
+    pixelBufferPtr = this;
+    pngle_set_draw_callback(pngle, on_draw);
+
+    // Feed data to pngle
+    int processed_bytes = 0;
+    while (processed_bytes < _pngImageSize)
+    {
+        int fed = pngle_feed(pngle, &_pngImagePtr[processed_bytes], _pngImageSize - processed_bytes);
+        if (fed < 0)
+        {
+            _logger.error("pngle error %s", pngle_error(pngle));
+        }
+        processed_bytes += fed;
+        _logger.info("fed=%d processed =%d", fed, processed_bytes);
+    }
+
+    pngle_destroy(pngle);
+
+    _logger.info("PNG decoding ok - set=%d unset=%d!", pixels_set, pixels_unset);
+    return true;
+}
+
+bool PixelBuffer::prepareBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize)
 {
     _logger.info("Decoding image (%d bytes)", pngImageSize);
+    _logger.debug("Image size %dx%d @ %d bpp, %d B overall", 
+        _width, _height, _bitPerPixel, _width*_height*_bitPerPixel / 8);
+
+    _pngImagePtr  = pngImagePtr;
+    _pngImageSize = pngImageSize;
+
+    // allocate memory for channel
     _logger.info("Memory report: largest %d B, total %d B free memory",
        heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
        heap_caps_get_free_size(MALLOC_CAP_8BIT) );
-    _logger.error("Image size %dx%d @ %d bpp, %d B overall", 
-        _width, _height, _bitPerPixel, _width*_height*_bitPerPixel / 8);
+    _bufSize = _height * ( ( _width + 7 ) / 8 );
+    _bufPtr = (uint8_t *) malloc(_bufSize);
 
+    /*
     // prepare decoding options which are called state in lodepng
     LodePNGState state;
     lodepng_state_init(&state);
@@ -56,6 +138,9 @@ bool PixelBuffer::createBufFromPng(unsigned char *pngImagePtr, size_t pngImageSi
     if (error != 0)
     {
         _logger.error("Error %u while decoding PNG: %s", error, lodepng_error_text(error));
+        _logger.info("info_png: compression_method=%u filter_method=%u interlace_method=%u bitdepth=%u colortype=%u palettesize=%u", 
+            state.info_png.compression_method, state.info_png.filter_method, state.info_png.interlace_method,
+            state.info_png.color.bitdepth, state.info_png.color.colortype, state.info_png.color.palettesize);
         deleteBuf();
         return false;
     }
@@ -65,10 +150,8 @@ bool PixelBuffer::createBufFromPng(unsigned char *pngImagePtr, size_t pngImageSi
         deleteBuf();
         return false;
     }
-    _logger.info("PNG decoding ok!");
-    _logger.info("Memory report: largest %d B, total %d B free memory",
-       heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-       heap_caps_get_free_size(MALLOC_CAP_8BIT) );
+    */
+
     return true;
 }
 
@@ -78,6 +161,13 @@ void PixelBuffer::deleteBuf()
     {
         free(_bufPtr);  // yes, the lodepng memory management is c style
         _bufPtr = nullptr;
+        _bufSize = 0;
+    }
+    if (_pngImagePtr != nullptr)
+    {
+        //free(_pngImagePtr);  // yes, the lodepng memory management is c style
+        _pngImagePtr = nullptr;
+        _pngImageSize = 0;
     }
 }
 

@@ -1,0 +1,91 @@
+/**
+ * Configuration Manager for ESP32
+ * Copyright (c) 2021 clausgf@github. See LICENSE.md for legal information.
+ */
+
+#include "configuration_manager.h"
+
+
+// ***************************************************************************
+
+ConfigManager::ConfigManager(const int capacity, const Logger& parentLogger):
+    _capacity(capacity),
+    _logger(__FILE__, parentLogger),
+    _jsonDoc(3*capacity)
+{
+}
+
+ConfigManager::~ConfigManager()
+{
+}
+
+// ***************************************************************************
+
+std::string ConfigManager::getJsonStr() const
+{
+    char data[_capacity];
+    serializeJson(_jsonDoc, data, sizeof(data));
+    return std::string(data);
+}
+
+bool ConfigManager::setConfig(const char *jsonBuf)
+{
+    DeserializationError err = deserializeJson(_jsonDoc, jsonBuf);
+
+    if (err)
+    {
+        _logger.error("Configuration data invalid: %s", err.c_str());
+        return false;
+    }
+
+    return true;
+}
+
+
+// ***************************************************************************
+
+int ConfigManager::getInt(std::string key, int defaultValue) const
+{
+    int value = defaultValue;
+
+    if (_jsonDoc.containsKey(key) && _jsonDoc[key].is<int>())
+    {
+        value = _jsonDoc[key];
+    } else {
+        _logger.error("getInt(\"%s\") invalid key or type, returning default", key.c_str());
+    }
+
+    return value;
+}
+
+std::string ConfigManager::getString(std::string key, const std::string defaultValue) const
+{
+    std::string value = defaultValue;
+
+    if (_jsonDoc.containsKey(key))
+    {
+        value = _jsonDoc[key].as<std::string>();
+    } else {
+        _logger.error("getString(\"%s\") invalid key, returning default", key.c_str());
+    }
+
+    return value;
+}
+
+// ***************************************************************************
+
+void ConfigManager::log() const
+{
+    _logger.info("Configuration dump");
+
+    auto obj = _jsonDoc.as<JsonObject>();
+    for (auto p : obj)
+    {
+        _logger.info("  %s: %s", p.key().c_str(), p.value().as<char *>());
+    }
+    _logger.info("Configuration end");
+}
+
+
+// ***************************************************************************
+

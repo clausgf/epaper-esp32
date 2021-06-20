@@ -19,7 +19,8 @@ public:
     virtual ~PixelBuffer();
 
     const uint8_t* getBufPtr() const { return _bufPtr; }
-    bool createBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize);
+    bool writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> colors);
+    bool prepareBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize);
     void deleteBuf();
 
     void drawPixel(int16_t x, int16_t y, uint16_t color);
@@ -32,11 +33,13 @@ private:
     int _bitPerPixel;
     Logger _logger;
 
+    unsigned char *_pngImagePtr;
+    size_t _pngImageSize;
     uint8_t* _bufPtr;
+    size_t _bufSize;
 
     const int BLACK = 0;
     const int WHITE = 1;
-    const int RED = 2;
 };
 
 #endif
