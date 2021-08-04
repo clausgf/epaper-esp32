@@ -3,8 +3,9 @@
  * Copyright (c) 2020 clausgf@github. See LICENSE.md for legal information.
  */
 
-#ifndef PIXELBUFFER_H
-#define PIXELBUFFER_H
+#pragma once
+
+#include <tuple>
 
 #include <Adafruit_GFX.h>
 
@@ -19,27 +20,22 @@ public:
     virtual ~PixelBuffer();
 
     const uint8_t* getBufPtr() const { return _bufPtr; }
-    bool writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> colors);
-    bool prepareBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize);
+    bool writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> color);
+    bool prepareBufForPng(unsigned char *pngImagePtr, size_t pngImageSize);
     void deleteBuf();
 
-    void drawPixel(int16_t x, int16_t y, uint16_t color);
-    void drawBattery(int x, int y, int voltage_mV, int percentage);
-    void drawWiFi(int x, int y, int rssi);
+    virtual void drawPixel(int16_t x, int16_t y, uint16_t color);
+    void drawBattery(int16_t x, int16_t y, uint16_t color, int voltage_mV, int percentage);
+    void drawWiFi(int16_t x, int16_t y, uint16_t color, int rssi);
 
 private:
-    int _width;
-    int _height;
-    int _bitPerPixel;
+    const int _width;
+    const int _height;
+    const int _bitPerPixel;
     Logger _logger;
 
     unsigned char *_pngImagePtr;
     size_t _pngImageSize;
     uint8_t* _bufPtr;
     size_t _bufSize;
-
-    const int BLACK = 0;
-    const int WHITE = 1;
 };
-
-#endif

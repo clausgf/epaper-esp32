@@ -3,7 +3,7 @@
  * Copyright (c) 2021 clausgf@github. See LICENSE.md for legal information.
  */
 
-#include "configuration_manager.h"
+#include "config_manager.h"
 
 
 // ***************************************************************************
@@ -81,7 +81,7 @@ void ConfigManager::log() const
     auto obj = _jsonDoc.as<JsonObject>();
     for (auto p : obj)
     {
-        _logger.info("  %s: %s", p.key().c_str(), p.value().as<char *>());
+        _logger.info("  %s: %s", p.key().c_str(), p.value().as<const char *>());
     }
     _logger.info("Configuration end");
 }

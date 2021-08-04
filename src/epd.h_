@@ -51,14 +51,6 @@ public:
     void stop();
 
 private:
-    int _pinSpiSck;
-    int _pinSpiMiso;
-    int _pinSpiMosi;
-    int _pinSpiCs;
-    int _pinDc;
-    int _pinRst;
-    int _pinBusy;
-    Logger _logger;
     static PanelDescriptionMap _panelDescriptions;
     GxEPD2::Panel _panelType;
     PanelDescription* _panelDescriptionPtr;

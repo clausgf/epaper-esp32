@@ -8,16 +8,19 @@
 #include <esp_log.h>
 #include <tuple>
 
-#include <esp32HTTPrequest.h>
 #include <ArduinoJson.h>
+#include <asyncHTTPrequest.h>
 #include <logger.h>
 #include <battery_monitor.h>
-#include <configuration_manager.h>
+//#include <config_manager.h>
 
 #include "led.h"
 #include "wifi_network.h"
-#include "pixelbuffer.h"
-#include "epd.h"
+#include "PanelInterface.h"
+#include "Panel.h"
+#include "PanelRegistry.h"
+#include "PixelBuffer.h"
+#include "Epd.h"
 #include "settings.h"
 
 #include "IPAddress.h"
@@ -37,24 +40,23 @@ auto battery = BatteryMonitor(
     /*voltageFactor_perMille*/ 2000,
     /*int voltageBias_mV*/ 0 );
 
-ConfigurationManager configuration = ConfigurationManager();
-
 auto net = WifiNetwork( WIFI_SSID, WIFI_PASSWORD );
 
 
 // ***** high-level epd ******************************************************
-auto epd = EPD(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
-
+auto panelInterface = PanelInterface(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
+auto panelRegistry = PanelRegistry();
+Panel* pPanel = nullptr;
 
 // ***** Data stored in RTC memory is preserved during deep sleep ************
 constexpr int MAX_RTC_CONFIG_SIZE = 1024;
 RTC_DATA_ATTR char rtc_config[MAX_RTC_CONFIG_SIZE] = {0};
 constexpr int MAX_RTC_HTTP_ETAG_SIZE = 127;
 RTC_DATA_ATTR char rtc_http_etag[MAX_RTC_HTTP_ETAG_SIZE] = {0};
+
 RTC_DATA_ATTR int bootCount = 0;
 RTC_DATA_ATTR unsigned long activeDuration_ms = 0;
 RTC_DATA_ATTR unsigned long sleepDuration_ms = 0;
-RTC_DATA_ATTR GxEPD2::Panel panelType = defaultPanelType;
 RTC_DATA_ATTR int imageResponseCode = 0;
 
 unsigned long updateInterval_s = 0;
@@ -212,7 +214,7 @@ private:
 
 // ***** Status Reporter *****************************************************
 
-String getStatusAsJson() {
+String getStatusAsJson(Panel* pPanel) {
     StaticJsonDocument<1024> json;
     const String mac = net.getMac();
     const String ip = WiFi.localIP().toString();
@@ -231,12 +233,15 @@ String getStatusAsJson() {
     jsonWifi["rssi"] = net.getRSSI();
     jsonWifi["mac"] = mac.c_str();
     jsonWifi["ip"] = ip.c_str();
-    auto jsonPanel = json.createNestedObject("panel");
-    jsonPanel["width"] = epd.getPanelPtr()->WIDTH;
-    jsonPanel["height"] = epd.getPanelPtr()->HEIGHT;
-    jsonPanel["color"] = epd.getPanelPtr()->hasColor;
-    jsonPanel["panel"] = epd.getPanelPtr()->panel;
-    jsonPanel["panelName"] = epd.getPanelName().c_str();
+    if (pPanel)
+    {
+        auto jsonPanel = json.createNestedObject("panel");
+        jsonPanel["panelName"] = pPanel->getName();
+        jsonPanel["channels"] = pPanel->getChannels();
+        jsonPanel["bitsPerChannel"] = pPanel->getBitsPerChannel();
+        jsonPanel["width"] = pPanel->getWidth();
+        jsonPanel["height"] = pPanel->getHeight();
+    }
 
     char _body[1024];
     serializeJson(json, _body, sizeof(_body));
@@ -292,13 +297,21 @@ void setup()
     if ( net.waitUntilConnected(bootTimestamp + 5000) )
     {
         // set panel (before setting it into the status...)
-        epd.setPanel(panelType);
-        epd.start();
+        const char *panelName = "Waveshare-042bw";
+        panelInterface.init();
+        panelRegistry.init();
+        pPanel = panelRegistry.getPanel(panelName);
+        if (pPanel == nullptr)
+        {
+            rootLogger.error("Panel %s is unknown", panelName);
+            panic();
+        }
+        pPanel->init(&panelInterface);
 
         // report status
         asyncHTTPrequest statusRequest;
-        String statusUrl = base_url + "api/devices/" + net.getId();
-        String statusBody = getStatusAsJson();
+        String statusUrl = base_url + "api/devices/" + net.getDeviceId();
+        String statusBody = getStatusAsJson(pPanel);
         //statusRequest.setDebug(true);
         if ( statusRequest.open("POST", statusUrl.c_str()) )
         {
@@ -310,7 +323,7 @@ void setup()
 
         // get new image
         auto httpImageClient = HttpClient(/*debug*/ false);
-        httpImageClient.startRequest("GET", base_url + "api/displays/" + net.getId() + "/image", "", etag.get());
+        httpImageClient.startRequest("GET", base_url + "api/displays/" + net.getDeviceId() + "/image", "", etag.get());
 
         // Wait for image data...
         httpImageClient.waitForCompletionUntil(bootTimestamp + 5000);
@@ -328,27 +341,24 @@ void setup()
 
             // create pixel buffers from png and display them
             String png = httpImageClient.getResponseText();
-            auto pb = PixelBuffer(epd.getPanelPtr()->WIDTH, epd.getPanelPtr()->HEIGHT, 1);
+            auto pb = PixelBuffer(pPanel->getWidth(), pPanel->getHeight(), pPanel->getBitsPerChannel());
 
-            if (pb.prepareBufFromPng((unsigned char*)httpImageClient.getResponseText().c_str(), png.length()))
+            if (pb.prepareBufForPng((unsigned char*)httpImageClient.getResponseText().c_str(), png.length()))
             {
-                auto channelColors = epd.getChannelColors();
+                auto channelColors = pPanel->getChannelRgbColors();
                 for (int channelNo = 0; channelNo < channelColors.size(); channelNo++)
                 {
                     auto colorTuple = channelColors[channelNo];
                     //rootLogger.info("colorTuple=%d/%d/%d", std::get<0>(colorTuple), std::get<1>(colorTuple), std::get<2>(colorTuple));
                     pb.writePngChannelToBuffer( colorTuple );
                     delay(1); // satisfy the task watchdog
-                    if ( std::get<0>(colorTuple)==255 && std::get<1>(colorTuple)==255 && std::get<2>(colorTuple)==255 )
-                    {
-                        pb.drawBattery(epd.getPanelPtr()->WIDTH - 22 - 5, 5, battery.getVoltage_mV(), battery.getPercentage());
-                        pb.drawWiFi(epd.getPanelPtr()->WIDTH - 22 - 5 - 14 - 5, 5, net.getRSSI());
-                    }
-                    epd.writeChannelToDisplay(channelNo, pb.getBufPtr());
+                    pb.drawBattery(pPanel->getWidth() - 22 - 5, 5, /*color*/pPanel->getDefaultColor(channelNo), battery.getVoltage_mV(), battery.getPercentage());
+                    pb.drawWiFi(pPanel->getWidth() - 22 - 5 - 14 - 5, 5, /*color*/pPanel->getDefaultColor(channelNo), net.getRSSI());
+                    pPanel->writeChannel(channelNo, pb.getBufPtr());
                     delay(1); // satisfy the task watchdog
                 }
                 etag.set(httpImageClient.getResponseHeader("ETag"));
-                epd.display();
+                pPanel->display();
             } else {
                 rootLogger.error("Error creating Pixel Buffer");
             }
@@ -356,7 +366,7 @@ void setup()
             rootLogger.debug("HTTP Response code %d != 200, nothing to display!", httpImageClient.getResponseCode());
         }
         // TODO httpStatusReporter.waitForCompletionUntil(bootTimestamp + 5000);
-        epd.stop();
+        pPanel->deep_sleep();
     } else {
         // no network connection
     }

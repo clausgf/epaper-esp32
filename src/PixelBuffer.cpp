@@ -8,9 +8,8 @@
 #include <esp_heap_caps.h>
 
 #include "lodepng.h"
-#include "epd.h"
 
-#include "pixelbuffer.h"
+#include "PixelBuffer.h"
 
 
 PixelBuffer::PixelBuffer(int width, int height, int bitPerPixel, const Logger& parentLogger): 
@@ -18,7 +17,7 @@ PixelBuffer::PixelBuffer(int width, int height, int bitPerPixel, const Logger& p
     _width(width), 
     _height(height), 
     _bitPerPixel(bitPerPixel),
-    _logger("pixelbuffer", parentLogger)
+    _logger(__FILE__, parentLogger)
 {
     _pngImagePtr = nullptr;
     _pngImageSize = 0;
@@ -61,7 +60,7 @@ void on_draw(pngle_t *pngle, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uin
     }
 }
 
-bool PixelBuffer::writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> colors)
+bool PixelBuffer::writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> color)
 {
     // check invariants
     if (_pngImagePtr == nullptr) {
@@ -70,9 +69,9 @@ bool PixelBuffer::writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> 
     }
 
     // configure on_draw
-    selected_r = std::get<0>(colors);
-    selected_g = std::get<1>(colors);
-    selected_b = std::get<2>(colors);
+    selected_r = std::get<0>(color);
+    selected_g = std::get<1>(color);
+    selected_b = std::get<2>(color);
     _logger.info("Decode PNG channel r=%d g=%d b=%d", selected_r, selected_g, selected_b);
 
     // create a white background
@@ -105,7 +104,7 @@ bool PixelBuffer::writePngChannelToBuffer(std::tuple<uint8_t, uint8_t, uint8_t> 
     return true;
 }
 
-bool PixelBuffer::prepareBufFromPng(unsigned char *pngImagePtr, size_t pngImageSize)
+bool PixelBuffer::prepareBufForPng(unsigned char *pngImagePtr, size_t pngImageSize)
 {
     _logger.info("Decoding image (%d bytes)", pngImageSize);
     _logger.debug("Image size %dx%d @ %d bpp, %d B overall", 
@@ -209,7 +208,7 @@ void PixelBuffer::drawPixel(int16_t x, int16_t y, uint16_t color) {
  * Draws a battery symbol filled according to the percentage.
  * Size: 22x12
  */
-void PixelBuffer::drawBattery(int x, int y, int voltage_mV, int percentage)
+void PixelBuffer::drawBattery(int16_t x, int16_t y, uint16_t color, int voltage_mV, int percentage)
 {
     // check invariants
     if (_bufPtr == nullptr) {
@@ -217,9 +216,9 @@ void PixelBuffer::drawBattery(int x, int y, int voltage_mV, int percentage)
         return;
     }
 
-    drawRect(x, y, 20, 12, BLACK);
-    fillRect(x + 20, y + 2, 2, 7, BLACK);
-    fillRect(x + 2, y + 2, 16 * percentage / 100.0, 8, BLACK);
+    drawRect(x, y, 20, 12, color);
+    fillRect(x + 20, y + 2, 2, 7, color);
+    fillRect(x + 2, y + 2, 16 * percentage / 100.0, 8, color);
 
     //setTextColor(BLACK);
     //setTextSize(1);
@@ -231,7 +230,7 @@ void PixelBuffer::drawBattery(int x, int y, int voltage_mV, int percentage)
  * Draws a signal strength indicator using up to 5 bars. 
  * Size: 14x12
  */
-void PixelBuffer::drawWiFi(int x, int y, int rssi)
+void PixelBuffer::drawWiFi(int16_t x, int16_t y, uint16_t color, int rssi)
 {
     // check invariants
     if (_bufPtr == nullptr) {
@@ -255,9 +254,9 @@ void PixelBuffer::drawWiFi(int x, int y, int rssi)
     }
 
     for (int bar = 1; bar <= 5; bar++) {
-        fillRect(x + (bar-1)*3, y+10, 2, 2, BLACK);
+        fillRect(x + (bar-1)*3, y+10, 2, 2, color);
         if (bar <= strength) {
-            fillRect(x + (bar-1)*3, y + 10 - 2*bar, 2, 2*bar, BLACK); 
+            fillRect(x + (bar-1)*3, y + 10 - 2*bar, 2, 2*bar, color); 
         }
     }
 
