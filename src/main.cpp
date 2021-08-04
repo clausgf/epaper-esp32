@@ -48,6 +48,8 @@ auto panelInterface = PanelInterface(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS, EPD_DC
 auto panelRegistry = PanelRegistry();
 Panel* pPanel = nullptr;
 
+auto epd = EPD(EPD_SCK, EPD_MISO, EPD_MOSI, EPD_CS, EPD_DC, EPD_RST, EPD_BUSY);
+
 // ***** Data stored in RTC memory is preserved during deep sleep ************
 constexpr int MAX_RTC_CONFIG_SIZE = 1024;
 RTC_DATA_ATTR char rtc_config[MAX_RTC_CONFIG_SIZE] = {0};
@@ -293,12 +295,15 @@ void setup()
     statusLed.set(true);
     rootLogger.info("Startup #%d  Battery=%d mV/%d%%", bootCount, battery.getVoltage_mV(), battery.getPercentage());
 
+    epd.setPanel(GxEPD2::Waveshare_4_2_bw);
+    epd.start();
+
     net.connect();
     if ( net.waitUntilConnected(bootTimestamp + 5000) )
     {
         // set panel (before setting it into the status...)
         const char *panelName = "Waveshare-042bw";
-        panelInterface.init();
+        //panelInterface.init();
         panelRegistry.init();
         pPanel = panelRegistry.getPanel(panelName);
         if (pPanel == nullptr)
@@ -306,7 +311,7 @@ void setup()
             rootLogger.error("Panel %s is unknown", panelName);
             panic();
         }
-        pPanel->init(&panelInterface);
+        //pPanel->init(&panelInterface);
 
         // report status
         asyncHTTPrequest statusRequest;
@@ -354,7 +359,8 @@ void setup()
                     delay(1); // satisfy the task watchdog
                     pb.drawBattery(pPanel->getWidth() - 22 - 5, 5, /*color*/pPanel->getDefaultColor(channelNo), battery.getVoltage_mV(), battery.getPercentage());
                     pb.drawWiFi(pPanel->getWidth() - 22 - 5 - 14 - 5, 5, /*color*/pPanel->getDefaultColor(channelNo), net.getRSSI());
-                    pPanel->writeChannel(channelNo, pb.getBufPtr());
+                    //pPanel->writeChannel(channelNo, pb.getBufPtr());
+                    epd.writeChannelToDisplay(0, pb.getBufPtr());
                     delay(1); // satisfy the task watchdog
                 }
                 etag.set(httpImageClient.getResponseHeader("ETag"));

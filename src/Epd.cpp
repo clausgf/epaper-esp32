@@ -14,7 +14,7 @@
 #include <epd3c/GxEPD2_750c_Z90.h>
 #include <GxEPD2_EPD.h>
 
-#include "epd.h"
+#include "Epd.h"
 
 
 EPD::EPD(int pinSpiSck, int pinSpiMiso, int pinSpiMosi, int pinSpiCs, int pinDc, int pinRst, int pinBusy, const Logger& parentLogger):

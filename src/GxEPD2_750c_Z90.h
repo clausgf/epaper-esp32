@@ -14,7 +14,7 @@
 #ifndef _GxEPD2_750c_Z90_H_
 #define _GxEPD2_750c_Z90_H_
 
-#include "../GxEPD2_EPD.h"
+#include "GxEPD2_EPD.h"
 
 class GxEPD2_750c_Z90 : public GxEPD2_EPD
 {
