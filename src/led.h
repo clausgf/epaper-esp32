@@ -1,5 +1,5 @@
 /**
- * ESP32 E-Paper display firmware
+ * ESP32 generic firmware
  * Copyright (c) 2020 clausgf@github. See LICENSE.md for legal information.
  */
 

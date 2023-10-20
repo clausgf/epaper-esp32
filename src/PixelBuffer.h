@@ -12,7 +12,7 @@
 #include "logger.h"
 
 
-class PixelBuffer: Adafruit_GFX
+class PixelBuffer: public Adafruit_GFX
 {
 public:
     PixelBuffer(int width, int height, int bitPerPixel,

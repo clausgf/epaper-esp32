@@ -12,17 +12,17 @@
 
 // ***************************************************************************
 
-class PanelRegistry
+class PanelFactory
 {
 public:
-    PanelRegistry()
+    PanelFactory()
     {
         _panelPtrs.push_back(new Panel43bw());
     }
 
     void init() { }
 
-    Panel *getPanel(const char *name)
+    Panel *createPanel(const char *name)
     {
         Panel *ret = nullptr;
         for (auto const& pPanel: _panelPtrs)

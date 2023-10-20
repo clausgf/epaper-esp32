@@ -21,7 +21,8 @@ void PanelInterface::init()
     digitalWrite(_cs_pin, HIGH);
     digitalWrite(_dc_pin, HIGH);
     digitalWrite(_rst_pin, HIGH);
-    SPI.begin(_sck_pin, _miso_pin, _mosi_pin);
+    SPI.end();
+    SPI.begin(_sck_pin, /*unused*/_miso_pin, _mosi_pin, _cs_pin);
 };
 
 void PanelInterface::reset(uint32_t before_reset_ms, uint32_t reset_duration_ms, uint32_t after_reset_ms)

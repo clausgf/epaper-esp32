@@ -3,8 +3,7 @@
  * Copyright (c) 2020 clausgf@github. See LICENSE.md for legal information.
  */
 
-#ifndef SETTINGS_H
-#define SETTINGS_H
+#pragma once
 
 #include <Arduino.h>
 #include <GxEPD2_EPD.h>
@@ -14,13 +13,15 @@
 
 const char* WIFI_SSID = "My WiFi SSID";
 const char* WIFI_PASSWORD = "My WiFi Password!";
-const String base_url = "http://192.168.100.1:8080/";
-const String display_id =  "Display ID (or alias) as configured on the server, e.g. epaper_43bw or hallway";
+const String base_url = "http://192.168.178.20:9830/";
 
-const unsigned long default_update_interval_s = 10 * 60;
+const unsigned long default_update_interval_s = 30 * 60;
 const unsigned long min_update_interval_s = 30;
 
-// raw display panel connected to Waveshare ESP32 e-Paper Driver Board
-auto rawDisplay = GxEPD2_420(/*CS*/ 15, /*DC*/ 27, /*RST*/ 26, /*BUSY*/ 25);
-
-#endif
+const int EPD_SCK = 13;
+const int EPD_MISO = 16;
+const int EPD_MOSI = 14;
+const int EPD_CS = 15;
+const int EPD_DC = 27;
+const int EPD_RST = 26;
+const int EPD_BUSY = 25;
